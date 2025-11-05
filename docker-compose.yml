@@ -1,130 +1,281 @@
 services:
-  postgres:
+  # ===================================
+  # BASES DE DATOS
+  # ===================================
+  
+  # Base de datos para user-service
+  postgres-user-service:
     image: postgres:14
+    container_name: postgres-user-service
     environment:
-      POSTGRES_DB: loans-software
+      POSTGRES_DB: user-service-db
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: password
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_user_service_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d loan_bank_db"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d user-service-db"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - loan-bank-network
 
-  # API Gateway con Nginx (opcional pero recomendado para enrutamiento)
-  gateway:
-    image: nginx:alpine
-    ports:
-      - "3000:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro  # Crea este archivo abajo
-    depends_on:
-      postgres:
-        condition: service_healthy
-      user-service:
-        condition: service_started
-      loan-service:
-        condition: service_started
-      admin-service:
-        condition: service_started
-    
-    
-  user-login:
-      image: postgres:14
-      container_name: user-login-db
-      environment:
-        POSTGRES_DB: user-login-db
-        POSTGRES_USER: admin
-        POSTGRES_PASSWORD: password
-      ports:
-        - "5433:5432"
-      volumes:
-        - user-login-data:/var/lib/postgresql/data
-
-  user-service:
-    build: /../user-service
-    ports:
-      - "3001:3000"
+  # Base de datos para loan-service
+  postgres-loan-service:
+    image: postgres:14
+    container_name: postgres-loan-service
     environment:
-      DATABASE_HOST: postgres
+      POSTGRES_DB: loans-service
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_loan_service_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d loans-service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - loan-bank-network
+
+  # Base de datos para admin-service
+  postgres-admin-service:
+    image: postgres:14
+    container_name: postgres-admin-service
+    environment:
+      POSTGRES_DB: admin_service_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin123
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_admin_service_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d admin_service_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - loan-bank-network
+
+  # Base de datos para user-login (auth-service)
+  postgres-user-login:
+    image: postgres:14
+    container_name: postgres-user-login
+    environment:
+      POSTGRES_DB: user-login-db
+      POSTGRES_USER: authuser
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_user_login_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authuser -d user-login-db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - loan-bank-network
+
+  # ===================================
+  # MICROSERVICIOS
+  # ===================================
+
+  # Servicio de Usuarios (Perfiles)
+  user-service:
+    build:
+      context: ../user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_HOST: postgres-user-service
       DATABASE_PORT: 5432
       DATABASE_USER: admin
       DATABASE_PASSWORD: password
       DATABASE_NAME: user-service-db
-      DATABASE_SCHEMA: user_service
+      DATABASE_SCHEMA: public
       JWT_SECRET: mysecret
       PORT: 3000
+      NODE_ENV: development
     depends_on:
-      postgres:
+      postgres-user-service:
         condition: service_healthy
     volumes:
-      - ./user-service:/app  # Para hot-reload en dev
+      - ../user-service:/app
+      - /app/node_modules
     command: npm run start:dev
+    networks:
+      - loan-bank-network
+    restart: unless-stopped
 
+  # Servicio de Préstamos
   loan-service:
-    build: /../loan-service
+    build:
+      context: ../loan-service
+      dockerfile: Dockerfile
+    container_name: loan-service
     ports:
-      - "3002:3000"
+      - "3002:3001"
     environment:
-      DATABASE_HOST: postgres
+      DATABASE_HOST: postgres-loan-service
       DATABASE_PORT: 5432
       DATABASE_USER: admin
       DATABASE_PASSWORD: password
-      DATABASE_NAME: loans-software
-      DATABASE_SCHEMA: loan_service
-      USER_SERVICE_URL: http://user-service:3001
+      DATABASE_NAME: loans-service
+      DATABASE_SCHEMA: user_service
+      USER_SERVICE_URL: http://user-service:3000
       JWT_SECRET: mysecret
-      PORT: 3000
+      PORT: 3001
+      NODE_ENV: development
     depends_on:
+      postgres-loan-service:
+        condition: service_healthy
       user-service:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+        condition: service_started
     volumes:
-      - ./loan-service:/app
+      - ../loan-service:/app
+      - /app/node_modules
     command: npm run start:dev
+    networks:
+      - loan-bank-network
+    restart: unless-stopped
 
+  # Servicio de Administración
   admin-service:
-    build: /../admin-service
+    build:
+      context: ../admin-service
+      dockerfile: Dockerfile
+      target: development
+    container_name: admin-service
     ports:
       - "3003:3000"
     environment:
-      DATABASE_HOST: postgres
-      DATABASE_PORT: 5432
-      DATABASE_USER: admin
-      DATABASE_PASSWORD: password
-      DATABASE_NAME: loans-software
-      DATABASE_SCHEMA: admin_service
-      LOAN_SERVICE_URL: http://loan-service:3002
-      USER_SERVICE_URL: http://user-service:3001
-      JWT_SECRET: mysecret
       PORT: 3000
+      NODE_ENV: development
+      DB_HOST: postgres-admin-service
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASS: admin123
+      DB_NAME: admin_service_db
+      JWT_SECRET: supersecret
+      LOAN_SERVICE_URL: http://loan-service:3001
+      USER_SERVICE_URL: http://user-service:3000
     depends_on:
-      loan-service:
+      postgres-admin-service:
         condition: service_healthy
       user-service:
-        condition: service_healthy
-      postgres:
+        condition: service_started
+      loan-service:
+        condition: service_started
+    volumes:
+      - ../admin-service:/app
+      - admin_service_node_modules:/app/node_modules
+    networks:
+      - loan-bank-network
+    restart: unless-stopped
+
+  # Servicio de Autenticación (Login)
+  user-login:
+    build:
+      context: ../user-login
+      dockerfile: Dockerfile
+    container_name: user-login
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      APP_PORT: 3001
+      DB_HOST: postgres-user-login
+      DB_PORT: 5432
+      DB_USERNAME: authuser
+      DB_PASSWORD: password
+      DB_DATABASE: user-login-db
+      JWT_SECRET: your-super-secret-jwt-key
+      JWT_EXPIRATION: 24h
+      SALT_ROUNDS: 10
+    depends_on:
+      postgres-user-login:
         condition: service_healthy
     volumes:
-      - ./admin-service:/app
+      - ../user-login:/app
+      - /app/node_modules
     command: npm run start:dev
+    networks:
+      - loan-bank-network
+    restart: unless-stopped
+
+  # ===================================
+  # FRONTEND
+  # ===================================
 
   frontend:
-    build: /../loans-frontend
+    build:
+      context: ../loans-frontend
+      dockerfile: Dockerfile
+    container_name: loans-frontend
     ports:
       - "3004:80"
     environment:
-      - REACT_APP_API_URL=http://gateway:80  # Usa gateway para enrutamiento
+      - REACT_APP_AUTH_SERVICE_URL=http://localhost:3001
+      - REACT_APP_PROFILE_SERVICE_URL=http://localhost:3000
+      - REACT_APP_ENV=development
+      - REACT_APP_DEBUG=true
     depends_on:
-      - gateway
-    volumes:
-      - ./frontend:/app  # Para dev, pero usa nginx para serve
+      - user-login
+      - user-service
+      - loan-service
+      - admin-service
+    networks:
+      - loan-bank-network
+    restart: unless-stopped
 
+  # ===================================
+  # API GATEWAY (NGINX)
+  # ===================================
+
+  gateway:
+    image: nginx:alpine
+    container_name: api-gateway
+    ports:
+      - "3005:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - user-service
+      - loan-service
+      - admin-service
+      - user-login
+    networks:
+      - loan-bank-network
+    restart: unless-stopped
+
+# ===================================
+# VOLÚMENES PERSISTENTES
+# ===================================
 volumes:
-  user-login-data:
-  postgres_data:
+  postgres_user_service_data:
+    name: loan_bank_user_service_data
+  postgres_loan_service_data:
+    name: loan_bank_loan_service_data
+  postgres_admin_service_data:
+    name: loan_bank_admin_service_data
+  postgres_user_login_data:
+    name: loan_bank_user_login_data
+  admin_service_node_modules:
+    name: loan_bank_admin_node_modules
+
+# ===================================
+# RED PERSONALIZADA
+# ===================================
+networks:
+  loan-bank-network:
+    name: loan-bank-network
+    driver: bridge
