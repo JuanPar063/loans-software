@@ -3,7 +3,6 @@ services:
   # BASES DE DATOS
   # ===================================
   
-  # Base de datos para user-service
   postgres-user-service:
     image: postgres:14
     container_name: postgres-user-service
@@ -23,7 +22,6 @@ services:
     networks:
       - loan-bank-network
 
-  # Base de datos para loan-service
   postgres-loan-service:
     image: postgres:14
     container_name: postgres-loan-service
@@ -43,7 +41,6 @@ services:
     networks:
       - loan-bank-network
 
-  # Base de datos para admin-service
   postgres-admin-service:
     image: postgres:14
     container_name: postgres-admin-service
@@ -63,7 +60,6 @@ services:
     networks:
       - loan-bank-network
 
-  # Base de datos para user-login (auth-service)
   postgres-user-login:
     image: postgres:14
     container_name: postgres-user-login
@@ -87,11 +83,13 @@ services:
   # MICROSERVICIOS
   # ===================================
 
-  # Servicio de Usuarios (Perfiles)
   user-service:
     build:
       context: ../user-service
       dockerfile: Dockerfile
+      target: development  # Especifica el stage
+      cache_from:
+        - node:20-alpine
     container_name: user-service
     ports:
       - "3000:3000"
@@ -110,17 +108,18 @@ services:
         condition: service_healthy
     volumes:
       - ../user-service:/app
-      - /app/node_modules
-    command: npm run start:dev
+      - /app/node_modules  # Volumen anónimo para node_modules
     networks:
       - loan-bank-network
     restart: unless-stopped
 
-  # Servicio de Préstamos
   loan-service:
     build:
       context: ../loan-service
       dockerfile: Dockerfile
+      target: development
+      cache_from:
+        - node:20-alpine
     container_name: loan-service
     ports:
       - "3002:3001"
@@ -143,17 +142,17 @@ services:
     volumes:
       - ../loan-service:/app
       - /app/node_modules
-    command: npm run start:dev
     networks:
       - loan-bank-network
     restart: unless-stopped
 
-  # Servicio de Administración
   admin-service:
     build:
       context: ../admin-service
       dockerfile: Dockerfile
       target: development
+      cache_from:
+        - node:20-alpine
     container_name: admin-service
     ports:
       - "3003:3000"
@@ -177,16 +176,18 @@ services:
         condition: service_started
     volumes:
       - ../admin-service:/app
-      - admin_service_node_modules:/app/node_modules
+      - /app/node_modules
     networks:
       - loan-bank-network
     restart: unless-stopped
 
-  # Servicio de Autenticación (Login)
   user-login:
     build:
       context: ../user-login
       dockerfile: Dockerfile
+      target: development
+      cache_from:
+        - node:20-alpine
     container_name: user-login
     ports:
       - "3001:3001"
@@ -207,7 +208,6 @@ services:
     volumes:
       - ../user-login:/app
       - /app/node_modules
-    command: npm run start:dev
     networks:
       - loan-bank-network
     restart: unless-stopped
@@ -220,14 +220,12 @@ services:
     build:
       context: ../loans-frontend
       dockerfile: Dockerfile
+      cache_from:
+        - node:20-alpine
+        - nginx:alpine
     container_name: loans-frontend
     ports:
       - "3004:80"
-    environment:
-      - REACT_APP_AUTH_SERVICE_URL=http://localhost:3001
-      - REACT_APP_PROFILE_SERVICE_URL=http://localhost:3000
-      - REACT_APP_ENV=development
-      - REACT_APP_DEBUG=true
     depends_on:
       - user-login
       - user-service
@@ -269,8 +267,6 @@ volumes:
     name: loan_bank_admin_service_data
   postgres_user_login_data:
     name: loan_bank_user_login_data
-  admin_service_node_modules:
-    name: loan_bank_admin_node_modules
 
 # ===================================
 # RED PERSONALIZADA
