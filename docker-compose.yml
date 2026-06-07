@@ -2,14 +2,14 @@ services:
   # ===================================
   # BASES DE DATOS
   # ===================================
-  
+
   postgres-user-service:
     image: postgres:14
     container_name: postgres-user-service
     environment:
       POSTGRES_DB: user-service-db
       POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${USER_SERVICE_DB_PASSWORD:-password}
     ports:
       - "5432:5432"
     volumes:
@@ -28,7 +28,7 @@ services:
     environment:
       POSTGRES_DB: loans-service
       POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${LOAN_SERVICE_DB_PASSWORD:-password}
     ports:
       - "5434:5432"
     volumes:
@@ -47,7 +47,7 @@ services:
     environment:
       POSTGRES_DB: admin_service_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: admin123
+      POSTGRES_PASSWORD: ${ADMIN_SERVICE_DB_PASSWORD:-admin123}
     ports:
       - "5435:5432"
     volumes:
@@ -66,7 +66,7 @@ services:
     environment:
       POSTGRES_DB: user-login-db
       POSTGRES_USER: authuser
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${USER_LOGIN_DB_PASSWORD:-password}
     ports:
       - "5433:5432"
     volumes:
@@ -82,12 +82,14 @@ services:
   # ===================================
   # MICROSERVICIOS
   # ===================================
+  # NOTA: JWT_SECRET es el MISMO para todos (firma/verificación compartida).
+  #       Definido por env (${JWT_SECRET}); en producción es OBLIGATORIO.
 
   user-service:
     build:
       context: ../user-service
       dockerfile: Dockerfile
-      target: development  # Especifica el stage
+      target: development
       cache_from:
         - node:20-alpine
     container_name: user-service
@@ -97,18 +99,27 @@ services:
       DATABASE_HOST: postgres-user-service
       DATABASE_PORT: 5432
       DATABASE_USER: admin
-      DATABASE_PASSWORD: password
+      DATABASE_PASSWORD: ${USER_SERVICE_DB_PASSWORD:-password}
       DATABASE_NAME: user-service-db
       DATABASE_SCHEMA: public
-      JWT_SECRET: mysecret
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
       PORT: 3000
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3004,http://localhost:3005}
+      THROTTLE_TTL: ${THROTTLE_TTL:-60}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
     depends_on:
       postgres-user-service:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/v1/health/liveness || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     volumes:
       - ../user-service:/app
-      - /app/node_modules  # Volumen anónimo para node_modules
+      - /app/node_modules
     networks:
       - loan-bank-network
     restart: unless-stopped
@@ -127,18 +138,27 @@ services:
       DATABASE_HOST: postgres-loan-service
       DATABASE_PORT: 5432
       DATABASE_USER: admin
-      DATABASE_PASSWORD: password
+      DATABASE_PASSWORD: ${LOAN_SERVICE_DB_PASSWORD:-password}
       DATABASE_NAME: loans-service
       DATABASE_SCHEMA: user_service
       USER_SERVICE_URL: http://user-service:3000
-      JWT_SECRET: mysecret
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
       PORT: 3001
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3004,http://localhost:3005}
+      THROTTLE_TTL: ${THROTTLE_TTL:-60}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
     depends_on:
       postgres-loan-service:
         condition: service_healthy
       user-service:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/v1/health/liveness || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     volumes:
       - ../loan-service:/app
       - /app/node_modules
@@ -158,22 +178,31 @@ services:
       - "3003:3000"
     environment:
       PORT: 3000
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
       DB_HOST: postgres-admin-service
       DB_PORT: 5432
       DB_USER: postgres
-      DB_PASS: admin123
+      DB_PASS: ${ADMIN_SERVICE_DB_PASSWORD:-admin123}
       DB_NAME: admin_service_db
-      JWT_SECRET: supersecret
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
       LOAN_SERVICE_URL: http://loan-service:3001
       USER_SERVICE_URL: http://user-service:3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3004,http://localhost:3005}
+      THROTTLE_TTL: ${THROTTLE_TTL:-60}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
     depends_on:
       postgres-admin-service:
         condition: service_healthy
       user-service:
-        condition: service_started
+        condition: service_healthy
       loan-service:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/v1/health/liveness || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     volumes:
       - ../admin-service:/app
       - /app/node_modules
@@ -192,19 +221,28 @@ services:
     ports:
       - "3001:3001"
     environment:
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
       APP_PORT: 3001
       DB_HOST: postgres-user-login
       DB_PORT: 5432
       DB_USERNAME: authuser
-      DB_PASSWORD: password
+      DB_PASSWORD: ${USER_LOGIN_DB_PASSWORD:-password}
       DB_DATABASE: user-login-db
-      JWT_SECRET: your-super-secret-jwt-key
-      JWT_EXPIRATION: 24h
-      SALT_ROUNDS: 10
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-24h}
+      SALT_ROUNDS: ${SALT_ROUNDS:-12}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3004,http://localhost:3005}
+      THROTTLE_TTL: ${THROTTLE_TTL:-60}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
     depends_on:
       postgres-user-login:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/v1/health/liveness || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     volumes:
       - ../user-login:/app
       - /app/node_modules
