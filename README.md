@@ -93,6 +93,30 @@ Swagger (documentación viva) por servicio: `http://localhost:{3000,3001,3002,30
 
 ---
 
+## 3b. Datos de prueba (seed)
+
+En `seeds/` hay un seed **idempotente** y coherente entre las 4 bases de datos (mismos UUID en
+`users`, `profiles`, `loans` y `metrics`). Con el stack arriba (y los servicios `healthy` al menos
+una vez, para que existan las tablas):
+
+```bash
+bash seeds/seed.sh                                       # Git Bash / WSL
+powershell -ExecutionPolicy Bypass -File seeds\seed.ps1  # PowerShell
+```
+
+Usuarios creados (contraseña de todos: **`Password123!`**):
+
+| Usuario | Rol | Datos asociados |
+|---|---|---|
+| `seed.admin` | admin | Perfil; puede ver dashboard, métricas y análisis crediticio |
+| `seed.client1` | client | Perfil (ingreso 5.000.000, doc `1000000001`), 1 préstamo **activo** con 2 pagos y 1 **pagado** |
+| `seed.client2` | client | Perfil (ingreso 2.500.000, doc `1000000002`), 1 préstamo **pendiente_aprobacion** |
+| `seed.teller` | teller | Solo cuenta (el rol no tiene flujo implementado) |
+
+Re-ejecutar el seed no duplica datos (`ON CONFLICT DO NOTHING`).
+
+---
+
 ## 4. Flujo de uso end-to-end (lo que pasa entre servicios)
 
 1. **Registro** — `POST /api/v1/auth/register` (user-login) crea el usuario y devuelve `access_token`.
