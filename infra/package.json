@@ -1,0 +1,24 @@
+{
+  "name": "loans-infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Infraestructura como código (AWS CDK) — pila serverless de notificaciones del sistema de préstamos",
+  "bin": { "infra": "bin/infra.js" },
+  "scripts": {
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy:local": "cdklocal bootstrap && cdklocal deploy --require-approval never",
+    "destroy:local": "cdklocal destroy --force"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.160.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5",
+    "@types/node": "^20.12.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.160.0",
+    "constructs": "^10.3.0",
+    "source-map-support": "^0.5.21"
+  }
+}

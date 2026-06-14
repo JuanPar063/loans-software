@@ -148,6 +148,12 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3004,http://localhost:3005}
       THROTTLE_TTL: ${THROTTLE_TTL:-60}
       THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
+      # --- Eventos serverless (publica a SNS; en dev apunta a LocalStack) ---
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-http://localstack:4566}
+      LOAN_EVENTS_TOPIC_ARN: ${LOAN_EVENTS_TOPIC_ARN:-arn:aws:sns:us-east-1:000000000000:LoanEvents}
     depends_on:
       postgres-loan-service:
         condition: service_healthy
@@ -289,6 +295,25 @@ services:
       - loan-service
       - admin-service
       - user-login
+    networks:
+      - loan-bank-network
+    restart: unless-stopped
+
+  # ===================================
+  # LOCALSTACK (AWS local: SNS, SQS, Lambda, DynamoDB)
+  # Para la pila serverless definida en ./infra (AWS CDK).
+  # ===================================
+  localstack:
+    image: localstack/localstack:3
+    container_name: localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sns,sqs,lambda,dynamodb,cloudformation,iam,sts,logs,s3
+      - DEBUG=0
+      - LAMBDA_DOCKER_NETWORK=loan-bank-network
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
     networks:
       - loan-bank-network
     restart: unless-stopped
